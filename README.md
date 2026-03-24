@@ -444,50 +444,17 @@ The Streamlit app generation pipeline uses ADK's `BuiltInCodeExecutor` to valida
 
 ### Chat History & Persistent Sessions
 
-By default Frosty uses ADK's `InMemorySessionService` — the full conversation context (every turn, tool call, and agent response) is held in memory for the duration of the process and is lost when Frosty exits.
+By default Frosty uses in-session memory — conversation context is held in memory for the duration of the process and is lost when Frosty exits. This is fine for most operations, but if you want chat history to persist across sessions you can plug in your own database-backed session service.
 
-```
-Current (default)
-─────────────────
-  adksession.py  →  InMemorySessionService  →  lost on exit
-```
+**Self-hosted persistence**
 
-ADK's `Runner` accepts both a `session_service` and a `memory_service`. The `ADKRunner` wrapper in `adkrunner.py` already exposes both slots — `memory_service` is wired but currently `None`. To persist chat history, replace either service:
+Frosty's session layer is swappable. Point it at any SQL database (SQLite, PostgreSQL, or similar) and conversations will survive process restarts — no other code changes required.
 
-**Persistent session history (full turn-by-turn log)**
+**Managed service — Agentic Brain**
 
-Swap `InMemorySessionService` in `adksession.py` for ADK's `DatabaseSessionService`, which writes sessions to a SQLite or PostgreSQL database:
+Our managed offering at [thegyrus.com](https://www.thegyrus.com) takes a different approach entirely: instead of storing chat history, Frosty generates a snapshot of every Snowflake object it has worked with, along with full context, and stores that in long-term memory. This means only the most recent message is needed to resume work — not the entire conversation history — which significantly reduces token cost on every interaction.
 
-```python
-# adksession.py
-from google.adk.sessions import DatabaseSessionService
-
-session_service = DatabaseSessionService(db_url="sqlite:///frosty_sessions.db")
-# or PostgreSQL:
-# session_service = DatabaseSessionService(db_url="postgresql://user:pass@host/dbname")
-```
-
-Sessions survive process restarts — users can resume a previous conversation by passing the same `user_id` and `session_id`.
-
-**Long-term memory (significantly reduces context window pressure)**
-
-Without a memory service the entire turn-by-turn history accumulates in the active context window. For long or complex Snowflake operations this can fill the model's context limit quickly. Plugging in a `memory_service` offloads conversation summaries to an external store and injects only the relevant prior context into each new turn — freeing the context window for the current task:
-
-```python
-# adkrunner.py — pass a memory service to the Runner
-from google.adk.memory import VertexAiMemoryBankService  # or a custom implementation
-
-runner = ADKRunner(
-    agent=agent,
-    app_name=app_name,
-    session_service=session_service,
-    memory_service=VertexAiMemoryBankService(...),  # plug in here
-)
-```
-
-Any class that implements ADK's `BaseMemoryService` interface works — PostgreSQL, Redis, a vector database, or any other backend.
-
-For a fully managed setup with persistent sessions and long-term memory out of the box, visit [thegyrus.com](https://www.thegyrus.com).
+With the managed service, Frosty also evolves over time: it adapts to your business rules and Snowflake environment based on how you use it, becoming more accurate and context-aware the more you work with it.
 
 ---
 
