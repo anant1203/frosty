@@ -1,0 +1,1 @@
+from .basetag import BaseTag,BaseMethod
